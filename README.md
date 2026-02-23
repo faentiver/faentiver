@@ -24,16 +24,8 @@ I build practical software across iOS, Python, and Unity.
 ## Currently Learning
 ![iOS%20Architecture](https://img.shields.io/badge/iOS%20Architecture-111111?style=for-the-badge&logo=apple&logoColor=white)
 ![Testing](https://img.shields.io/badge/Testing-6DB33F?style=for-the-badge&logo=testinglibrary&logoColor=white)
-![Docker%20Workflows](https://img.shields.io/badge/Docker%20Workflows-2496ED?style=for-the-badge&logo=docker&logoColor=white)
-![SQL%20Basics](https://img.shields.io/badge/SQL%20Basics-003B57?style=for-the-badge&logo=postgresql&logoColor=white)
 
 - iOS architecture and persistence patterns
 - Testing fundamentals (unit + integration basics)
 - Docker-based local development workflows
 - SQL querying and database design basics
-
-## Contact
-- GitHub: https://github.com/faentiver
-- LinkedIn: <link>
-- Email: <address>
-- Location: Stuttgart, Germany
