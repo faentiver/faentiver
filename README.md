@@ -1,7 +1,7 @@
 # Hi, I'm Fatih Coşkun
 
 Software Engineering student based in Stuttgart, Germany.  
-I build practical software across iOS, Python, and Unity.
+I build software across iOS, Python, and Unity.
 
 ## Focus
 - iOS apps with SwiftUI and Core Data
