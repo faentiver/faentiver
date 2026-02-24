@@ -1,7 +1,6 @@
 # Hi, I'm Fatih Coşkun
 
-Software Engineering student based in Stuttgart, Germany.  
-I build practical software across iOS, Python, and Unity.
+Software Engineering student building practical software across iOS, Python, and Unity with a focus on clean, maintainable implementation.
 
 ## Focus
 - iOS apps with SwiftUI and Core Data
@@ -24,8 +23,11 @@ I build practical software across iOS, Python, and Unity.
 ## Currently Learning
 ![iOS%20Architecture](https://img.shields.io/badge/iOS%20Architecture-111111?style=for-the-badge&logo=apple&logoColor=white)
 ![Testing](https://img.shields.io/badge/Testing-6DB33F?style=for-the-badge&logo=testinglibrary&logoColor=white)
+![Persistence%20Patterns](https://img.shields.io/badge/Persistence%20Patterns-4B5563?style=for-the-badge&logo=databricks&logoColor=white)
+![Database%20Design](https://img.shields.io/badge/Database%20Design-003B57?style=for-the-badge&logo=postgresql&logoColor=white)
 
-- iOS architecture and persistence patterns
-- Testing fundamentals (unit + integration basics)
-- Docker-based local development workflows
-- SQL querying and database design basics
+## Selected Work
+- iOS app with SwiftUI/Core Data, maps and location features, plus on-device security using Keychain and LocalAuthentication
+- Python data tooling with pandas for validation, transformation, and export workflows
+- Unity/C# prototype work focused on interaction systems and iterative gameplay mechanics
+- Q-learning traffic simulation in a custom grid environment with logging and route visualization
