@@ -1,4 +1,7 @@
-"""Erzeugt assets/rings.svg: der GitHub-Beitragskalender als goldene Ringe, die ein Komet einsammelt.
+"""Erzeugt assets/rings.svg: der GitHub-Beitragskalender als goldene Ringe.
+
+Ablauf pro Runde: Die Ringe werden Spalte für Spalte mit Funkeln eingesammelt, der RINGS-Zähler zählt mit,
+dann erscheint „ZONE CLEAR!“, danach tauchen die Ringe wieder auf.
 
 Läuft täglich als GitHub-Action. Braucht GITHUB_TOKEN (oder GH_TOKEN) für die GraphQL-API.
 Ohne Token wird der letzte Stand aus data/contributions.json verwendet.
@@ -10,22 +13,29 @@ import urllib.request
 from datetime import date
 from pathlib import Path
 
-from font import outlined_text, text_rects, text_width
-from pixel import Grid, svg_rects
-from sprites import COLORS, comet, ring
+from font import fancy_text, outlined_text, text_rects, text_width
+from pixel import svg_rects
+from ring_sprite import FRAME_MS
+from sprites import COLORS, fatih_ring_frames, sparkle_frames
 
 ROOT = Path(__file__).resolve().parent.parent
 LOGIN = "faentiver"
 QUERY = """query($login:String!){user(login:$login){contributionsCollection{contributionCalendar{
   totalContributions weeks{contributionDays{date contributionCount contributionLevel}}}}}}"""
 
-W, H = 840, 236
-CELL = 14
+CELL = 17  # 16-Pixel-Ring + 1 Pixel Abstand
 COLS, ROWS = 53, 7
-GX = (W - COLS * CELL) // 2
-GY = 52
-RUN, CYCLE = 9.0, 12.0  # Sekunden: Lauf über die Breite, ganzer Zyklus
-SIZE = {"FIRST_QUARTILE": 8, "SECOND_QUARTILE": 10, "THIRD_QUARTILE": 12, "FOURTH_QUARTILE": 12}
+HALF = 27  # das Jahr in zwei Hälften untereinander: 27 + 26 Wochen
+W = 840
+GX = (W - HALF * CELL) // 2
+GY = 50
+GY2 = GY + ROWS * CELL + 14
+H = GY2 + ROWS * CELL + 34
+CYCLE = 13.0
+SWEEP_START, SWEEP = 0.8, 7.0
+CLEAR_IN, CLEAR_OUT = 8.1, 11.4
+RESPAWN = 11.7
+RING = 16
 
 
 def fetch():
@@ -45,7 +55,7 @@ def fetch():
     return json.loads(cache.read_text())
 
 
-def streaks(days):
+def streak(days):
     best = cur = 0
     for d in days:
         cur = cur + 1 if d["contributionCount"] > 0 else 0
@@ -53,97 +63,130 @@ def streaks(days):
     return best
 
 
+def pct(t):
+    return f"{max(0.0, min(100.0, t / CYCLE * 100)):.3f}%"
+
+
 def build(cal):
     weeks = cal["weeks"][-COLS:]
     days = [d for w in weeks for d in w["contributionDays"]]
-    total = cal["totalContributions"]
+    total = sum(d["contributionCount"] for d in days)
     active = sum(1 for d in days if d["contributionCount"] > 0)
+    dt = SWEEP / COLS
 
-    # Komet: Startposition und Geschwindigkeit, daraus der Zeitpunkt, an dem er eine Spalte erreicht
-    c_scale = 2
-    c_w = 22 * c_scale
-    x_from, x_to = -c_w - 20, W + 20
-    head = 18 * c_scale
+    def t_col(c):
+        return SWEEP_START + c * dt
 
-    def t_at(x):
-        return RUN * (x - x_from - head) / (x_to - x_from)
+    css = [
+        "@keyframes rf{0%{opacity:1}" + f"{100 / 16:.3f}" + "%{opacity:0}}",
+        f".rf{{opacity:0;animation:rf {FRAME_MS * 16 / 1000}s step-end infinite}}",
+        "@keyframes sp{0%{opacity:1}" + f"{0.07 / CYCLE * 100:.3f}" + "%{opacity:0}}",
+        f".sp{{opacity:0;animation:sp {CYCLE}s step-end infinite}}",
+    ]
+    defs = [f'<clipPath id="r"><rect width="{W}" height="{H}" rx="15"/></clipPath>']
 
-    css = f"""
-    .spin{{animation:spin 1s steps(1,end) infinite;transform-box:fill-box;transform-origin:center}}
-    .col{{animation:collect {CYCLE}s linear infinite both;transform-box:fill-box;transform-origin:center}}
-    .spark{{opacity:0;animation:spark {CYCLE}s linear infinite}}
-    .comet{{animation:run {CYCLE}s linear infinite}}
-    .beam{{animation:run {CYCLE}s linear infinite}}
-    .cf0{{animation:flick .16s step-end infinite reverse}}
-    .cf1{{animation:flick .16s step-end infinite}}
-    .ground{{animation:gs .5s linear infinite}}
-    @keyframes spin{{0%{{transform:scaleX(1)}}25%{{transform:scaleX(.55)}}50%{{transform:scaleX(.15)}}75%{{transform:scaleX(.55)}}}}
-    @keyframes collect{{0%{{opacity:1;transform:scale(1)}}2%{{opacity:0;transform:scale(1.9)}}72%{{opacity:0;transform:scale(.3)}}82%{{opacity:1;transform:scale(1)}}100%{{opacity:1;transform:scale(1)}}}}
-    @keyframes spark{{0%{{opacity:1}}4%{{opacity:0}}100%{{opacity:0}}}}
-    @keyframes run{{0%{{transform:translateX({x_from}px)}}{RUN / CYCLE * 100:.2f}%{{transform:translateX({x_to}px)}}100%{{transform:translateX({x_to}px)}}}}
-    @keyframes flick{{0%{{opacity:1}}50%{{opacity:0}}}}
-    @keyframes gs{{from{{transform:translateX(0)}}to{{transform:translateX(-16px)}}}}
-    """
-
-    defs = [f'<clipPath id="r"><rect width="{W}" height="{H}" rx="16"/></clipPath>']
-    for s in sorted(set(SIZE.values())):
-        defs.append(f'<g id="ring{s}">{svg_rects(ring(s), 1, COLORS)}</g>')
-    defs.append('<g id="spark"><rect x="2" y="0" width="1" height="5" fill="#fff6b0"/><rect x="0" y="2" width="5" height="1" fill="#fff6b0"/><rect x="2" y="2" width="1" height="1" fill="#ffffff"/></g>')
+    frames = fatih_ring_frames()
+    for i, f in enumerate(frames):
+        defs.append(f'<g id="rf{i}">{svg_rects(f, 1, COLORS)}</g>')
+    n = len(frames)
+    defs.append('<g id="ring">' + "".join(
+        f'<g class="rf" style="animation-delay:{-(n - i) * FRAME_MS / 1000:.3f}s"><use xlink:href="#rf{i}"/></g>' for i in range(n)) + "</g>")
+    for i, f in enumerate(sparkle_frames(16)):
+        defs.append(f'<g id="sp{i}">{svg_rects(f, 1, COLORS)}</g>')
 
     p = [f'<g clip-path="url(#r)"><rect width="{W}" height="{H}" fill="{COLORS["panel"]}"/>']
+    # feines Punktraster wie ein Level-Hintergrund
+    p.append(f'<rect x="0" y="0" width="{W}" height="{H}" fill="url(#bg)"/>')
+    defs.append(
+        '<pattern id="bg" width="14" height="14" patternUnits="userSpaceOnUse">'
+        f'<rect x="0" y="0" width="1" height="1" fill="{COLORS["dot"]}" opacity=".45"/></pattern>'
+    )
 
-    # HUD oben links, Zonen-Titel oben rechts
+    # HUD links: RINGS (zählt mit), STREAK, DAYS
     hx, hy = 28, 18
-    for label, value in (("RINGS", f"{total:04d}"), ("STREAK", str(streaks(days))), ("DAYS", str(active))):
-        p.append(outlined_text(label, hx, hy, 2, COLORS["Y"], COLORS["navy"]))
-        hx += text_width(label, 2) + 10
-        p.append(outlined_text(value, hx, hy, 2, "#ffffff", COLORS["navy"]))
-        hx += text_width(value, 2) + 26
+    p.append(outlined_text("RINGS", hx, hy, 2, COLORS["o4"], COLORS["navy"]))
+    cx = hx + text_width("RINGS", 2) + 10
+    # Zählerstände: 0 bis zur ersten Spalte, danach kumuliert je Spalte, nach dem Respawn wieder 0
+    states = [(0.0, 0)]
+    cum = 0
+    for c, w in enumerate(weeks):
+        cum += sum(d["contributionCount"] for d in w["contributionDays"])
+        if cum != states[-1][1]:
+            states.append((t_col(c), cum))
+    states.append((RESPAWN, 0))
+    for i, (start, value) in enumerate(states):
+        end = states[i + 1][0] if i + 1 < len(states) else CYCLE
+        if end <= start:
+            continue
+        name = f"cnt{i}"
+        css.append(f"@keyframes {name}{{0%,{pct(start)}{{opacity:0}}{pct(start)},{pct(end)}{{opacity:1}}{pct(end)},100%{{opacity:0}}}}")
+        css.append(f".{name}{{opacity:0;animation:{name} {CYCLE}s step-end infinite}}")
+        if start == 0.0:
+            css[-2] = f"@keyframes {name}{{0%,{pct(end)}{{opacity:1}}{pct(end)},100%{{opacity:0}}}}"
+        p.append(f'<g class="{name}">{outlined_text(f"{value:04d}", cx, hy, 2, "#ffffff", COLORS["navy"])}</g>')
+    cx += text_width("0000", 2) + 26
+    for label, value in (("STREAK", str(streak(days))), ("DAYS", str(active))):
+        p.append(outlined_text(label, cx, hy, 2, COLORS["o4"], COLORS["navy"]))
+        cx += text_width(label, 2) + 10
+        p.append(outlined_text(value, cx, hy, 2, "#ffffff", COLORS["navy"]))
+        cx += text_width(value, 2) + 26
     zone = "CONTRIBUTION ZONE"
     p.append(outlined_text(zone, W - 28 - text_width(zone, 2), hy, 2, "#ffffff", COLORS["navy"]))
 
-    # Lichtsäule, die mit dem Kometen läuft (zeigt, welche Spalte gerade eingesammelt wird)
-    p.append(f'<g class="beam"><rect x="{head - CELL // 2}" y="{GY - 4}" width="{CELL}" height="{ROWS * CELL + 8}" fill="#5bb4ff" opacity=".10"/></g>')
-
     # Ringe bzw. leere Felder
     for c, w in enumerate(weeks):
-        cx = GX + c * CELL + CELL / 2
-        delay = t_at(cx)
+        x0 = GX + (c % HALF) * CELL
+        gy = GY if c < HALF else GY2
+        t = t_col(c)
+        respawn = RESPAWN + c * 0.012
+        kname = f"k{c}"
+        css.append(
+            f"@keyframes {kname}{{0%,{pct(t)}{{opacity:1;transform:scale(1)}}"
+            f"{pct(t + 0.09)}{{opacity:0;transform:scale(1.7)}}"
+            f"{pct(respawn)}{{opacity:0;transform:scale(.2)}}"
+            f"{pct(respawn + 0.25)}{{opacity:1;transform:scale(1.15)}}"
+            f"{pct(respawn + 0.4)},100%{{opacity:1;transform:scale(1)}}}}"
+            f".{kname}{{animation:{kname} {CYCLE}s linear infinite;transform-box:fill-box;transform-origin:center}}"
+        )
+        col_rings, col_sparks = [], []
         for d in w["contributionDays"]:
             row = date.fromisoformat(d["date"]).isoweekday() % 7  # Sonntag oben, wie bei GitHub
-            cy = GY + row * CELL + CELL / 2
+            cy = gy + row * CELL
             lvl = d["contributionLevel"]
             if lvl == "NONE":
-                p.append(f'<rect x="{cx - 1:g}" y="{cy - 1:g}" width="2" height="2" fill="{COLORS["dot"]}"/>')
+                p.append(f'<rect x="{x0 + 7}" y="{cy + 7}" width="2" height="2" fill="{COLORS["dot"]}"/>')
                 continue
-            s = SIZE[lvl]
-            glow = f'<circle cx="{cx:g}" cy="{cy:g}" r="7" fill="#ffd21a" opacity=".18"/>' if lvl == "FOURTH_QUARTILE" else ""
-            p.append(
-                f'{glow}<g class="col" style="animation-delay:{delay:.2f}s"><g class="spin">'
-                f'<use xlink:href="#ring{s}" x="{cx - s / 2:g}" y="{cy - s / 2:g}"/></g></g>'
-                f'<g class="spark" style="animation-delay:{delay:.2f}s"><use xlink:href="#spark" x="{cx - 2.5:g}" y="{cy - 9:g}"/></g>'
-            )
+            col_rings.append(f'<use xlink:href="#ring" x="{x0}" y="{cy}"/>')
+            col_sparks.append((x0, cy))
+        if col_rings:
+            p.append(f'<g class="{kname}">{"".join(col_rings)}</g>')
+            for i in range(4):
+                sparks = "".join(f'<use xlink:href="#sp{i}" x="{sx}" y="{sy}"/>' for sx, sy in col_sparks)
+                p.append(f'<g class="sp" style="animation-delay:{t + i * 0.07:.3f}s">{sparks}</g>')
 
-    # Laufstrecke mit Gras und Schachbrett
-    ty = GY + ROWS * CELL + 44
-    p.append(f'<rect x="0" y="{ty}" width="{W}" height="3" fill="{COLORS["g1"]}"/><rect x="0" y="{ty + 3}" width="{W}" height="2" fill="{COLORS["g2"]}"/>')
-    tiles = []
-    for x in range(0, W + 32, 8):
-        for i, y in enumerate(range(ty + 5, H, 8)):
-            col = COLORS["e1"] if ((x // 8) + i) % 2 == 0 else COLORS["e2"]
-            tiles.append(f'<rect x="{x}" y="{y}" width="8" height="8" fill="{col}"/>')
-    p.append(f'<g class="ground">{"".join(tiles)}</g>')
-
-    # Komet auf der Strecke
-    c0, c1 = svg_rects(comet(0), 1, COLORS), svg_rects(comet(1), 1, COLORS)
-    p.append(
-        f'<g transform="translate(0,{ty - 9 * c_scale - 2})"><g class="comet"><g transform="scale({c_scale})">'
-        f'<g class="cf0">{c0}</g><g class="cf1">{c1}</g></g></g></g>'
+    # „ZONE CLEAR!“-Banner nach dem Einsammeln
+    clear = "ZONE CLEAR!"
+    cw = text_width(clear, 4)
+    banner_y = H // 2 - 22
+    css.append(
+        f"@keyframes clr{{0%,{pct(CLEAR_IN)}{{transform:translateX(-900px)}}{pct(CLEAR_IN + 0.35)},{pct(CLEAR_OUT)}{{transform:translateX(0)}}"
+        f"{pct(CLEAR_OUT + 0.3)},100%{{transform:translateX(900px)}}}}"
+        f".clr{{animation:clr {CYCLE}s steps(1,end) infinite}}"
     )
+    tally = f"{total} RINGS COLLECTED"
+    banner = (
+        f'<rect x="0" y="{banner_y - 14}" width="{W}" height="72" fill="{COLORS["navy"]}" opacity=".94"/>'
+        f'<rect x="0" y="{banner_y - 14}" width="{W}" height="3" fill="{COLORS["o4"]}"/>'
+        f'<rect x="0" y="{banner_y + 55}" width="{W}" height="3" fill="{COLORS["o4"]}"/>'
+        + fancy_text(clear, (W - cw) // 2, banner_y, 4, ["#ffffff", "#fff3a0", "#ffd84a", "#ffb21e"], COLORS["navy"], COLORS["shadow"], 2)
+        + outlined_text(tally, (W - text_width(tally, 2)) // 2, banner_y + 36, 2, "#ffffff", COLORS["navy"])
+    )
+    css[-1] = css[-1].replace("steps(1,end)", "cubic-bezier(.5,0,.3,1)")
+    p.append(f'<g class="clr">{banner}</g>')
 
     # Fußzeile
     foot = f"LAST 12 MONTHS · UPDATED {date.today().isoformat()}"
-    svg, _ = text_rects(foot, W - 28 - text_width(foot, 1), GY + ROWS * CELL + 14, 1, "#5b6f9e")
+    svg, _ = text_rects(foot, W - 28 - text_width(foot, 1), H - 18, 1, COLORS["dim"])
     p.append(svg)
     p.append("</g>")
 
@@ -151,7 +194,7 @@ def build(cal):
         f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 {W} {H}" '
         f'width="{W}" height="{H}" shape-rendering="crispEdges" role="img">'
         f"<title>{total} Beiträge im letzten Jahr als goldene Ringe</title>"
-        f"<style>{css}</style><defs>{''.join(defs)}</defs>{''.join(p)}</svg>"
+        f"<style>{''.join(css)}</style><defs>{''.join(defs)}</defs>{''.join(p)}</svg>"
     )
 
 
