@@ -1024,12 +1024,12 @@
     },
     {
      "date": "2026-04-27",
-     "contributionCount": 28,
+     "contributionCount": 27,
      "contributionLevel": "SECOND_QUARTILE"
     },
     {
      "date": "2026-04-28",
-     "contributionCount": 4,
+     "contributionCount": 5,
      "contributionLevel": "FIRST_QUARTILE"
     },
     {
@@ -2048,12 +2048,12 @@
     },
     {
      "date": "2026-10-28",
-     "contributionCount": 12,
+     "contributionCount": 1,
      "contributionLevel": "FIRST_QUARTILE"
     },
     {
      "date": "2026-10-29",
-     "contributionCount": 34,
+     "contributionCount": 45,
      "contributionLevel": "SECOND_QUARTILE"
     }
    ]

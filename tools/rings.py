@@ -72,10 +72,10 @@ def build(cal):
     days = [d for w in weeks for d in w["contributionDays"]]
     total = sum(d["contributionCount"] for d in days)
     active = sum(1 for d in days if d["contributionCount"] > 0)
-    dt = SWEEP / COLS
+    dt = SWEEP / HALF  # eine Welle: Spalte k oben und Spalte k unten gleichzeitig
 
     def t_col(c):
-        return SWEEP_START + c * dt
+        return SWEEP_START + (c % HALF) * dt
 
     css = [
         "@keyframes rf{0%{opacity:1}" + f"{100 / 16:.3f}" + "%{opacity:0}}",
@@ -102,17 +102,20 @@ def build(cal):
         f'<rect x="0" y="0" width="1" height="1" fill="{COLORS["dot"]}" opacity=".45"/></pattern>'
     )
 
-    # HUD links: RINGS (zählt mit), STREAK, DAYS
+    # HUD links: RINGS (eingesammelte Ringe = aktive Tage, zählt mit), STREAK, TOTAL (Beiträge)
     hx, hy = 28, 18
     p.append(outlined_text("RINGS", hx, hy, 2, COLORS["o4"], COLORS["navy"]))
     cx = hx + text_width("RINGS", 2) + 10
-    # Zählerstände: 0 bis zur ersten Spalte, danach kumuliert je Spalte, nach dem Respawn wieder 0
+    # Zählerstände: 0 bis zur ersten Spalte, danach je Wellenschritt die eingesammelten Ringe, nach dem Respawn wieder 0
+    def rings_in(c):
+        return sum(1 for d in weeks[c]["contributionDays"] if d["contributionCount"] > 0) if c < len(weeks) else 0
+
     states = [(0.0, 0)]
     cum = 0
-    for c, w in enumerate(weeks):
-        cum += sum(d["contributionCount"] for d in w["contributionDays"])
+    for k in range(HALF):
+        cum += rings_in(k) + rings_in(k + HALF)
         if cum != states[-1][1]:
-            states.append((t_col(c), cum))
+            states.append((t_col(k), cum))
     states.append((RESPAWN, 0))
     for i, (start, value) in enumerate(states):
         end = states[i + 1][0] if i + 1 < len(states) else CYCLE
@@ -125,7 +128,7 @@ def build(cal):
             css[-2] = f"@keyframes {name}{{0%,{pct(end)}{{opacity:1}}{pct(end)},100%{{opacity:0}}}}"
         p.append(f'<g class="{name}">{outlined_text(f"{value:04d}", cx, hy, 2, "#ffffff", COLORS["navy"])}</g>')
     cx += text_width("0000", 2) + 26
-    for label, value in (("STREAK", str(streak(days))), ("DAYS", str(active))):
+    for label, value in (("STREAK", str(streak(days))), ("TOTAL", str(total))):
         p.append(outlined_text(label, cx, hy, 2, COLORS["o4"], COLORS["navy"]))
         cx += text_width(label, 2) + 10
         p.append(outlined_text(value, cx, hy, 2, "#ffffff", COLORS["navy"]))
@@ -138,7 +141,7 @@ def build(cal):
         x0 = GX + (c % HALF) * CELL
         gy = GY if c < HALF else GY2
         t = t_col(c)
-        respawn = RESPAWN + c * 0.012
+        respawn = RESPAWN + (c % HALF) * 0.02
         kname = f"k{c}"
         css.append(
             f"@keyframes {kname}{{0%,{pct(t)}{{opacity:1;transform:scale(1)}}"
@@ -173,7 +176,7 @@ def build(cal):
         f"{pct(CLEAR_OUT + 0.3)},100%{{transform:translateX(900px)}}}}"
         f".clr{{animation:clr {CYCLE}s steps(1,end) infinite}}"
     )
-    tally = f"{total} RINGS COLLECTED"
+    tally = f"{active} RINGS · {total} CONTRIBUTIONS"
     banner = (
         f'<rect x="0" y="{banner_y - 14}" width="{W}" height="72" fill="{COLORS["navy"]}" opacity=".94"/>'
         f'<rect x="0" y="{banner_y - 14}" width="{W}" height="3" fill="{COLORS["o4"]}"/>'
