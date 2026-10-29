@@ -1,145 +1,196 @@
-"""Erzeugt assets/header.svg: Pixel-Landschaft mit Parallax, Ringen, Komet und Titelkarte."""
+"""Erzeugt assets/header.svg: 16-Bit-Kulisse mit Parallax, drehenden Ringen und Titelkarten-Intro."""
 
+import math
 from pathlib import Path
 
-from font import outlined_text, text_width
+from font import fancy_text, outlined_text, text_width
 from pixel import Grid, svg_rects
-from sprites import COLORS, cloud, comet, palm, ring
+from ring_sprite import FRAME_MS
+from sprites import COLORS, cloud, fatih_ring_frames, ground_tile, palm
 
-P = 4  # Bildschirmpixel pro Spielpixel
-W, H = 210, 60  # Spielpixel
-GROUND = 46
-
+P = 3  # Bildschirmpixel pro Spielpixel
+W, H = 280, 80  # Spielpixel (840 × 240 Bildschirmpixel)
+SKY_END = 44
+GROUND = 60
+GROUND_SPEED = 96  # Bildschirmpixel pro Sekunde
 
 DEFS = []
 
 
-def tile_svg(grid, x_offsets, y=0, name=None):
-    """Definiert die Kachel einmal in <defs> und setzt sie per <use> an alle Positionen."""
-    name = name or f"t{len(DEFS)}"
+def define(name, grid):
     DEFS.append(f'<g id="{name}">{svg_rects(grid, 1, COLORS)}</g>')
-    return "".join(f'<use xlink:href="#{name}" x="{x}" y="{y}"/>' for x in x_offsets)
+
+
+def use(name, x, y):
+    return f'<use xlink:href="#{name}" x="{x:g}" y="{y:g}"/>'
 
 
 def mountains():
-    g = Grid(W, 20)
-    for cx, h, w in ((20, 14, 26), (62, 18, 30), (110, 12, 24), (150, 17, 28), (195, 13, 26)):
-        for dx in (-W, 0, W):
-            g.poly([(cx + dx - w, 20), (cx + dx, 20 - h), (cx + dx + w, 20)], "m1")
-            g.poly([(cx + dx - 3, 20 - h + 3), (cx + dx, 20 - h), (cx + dx + 3, 20 - h + 3)], "m2", only=("m1",))
+    """Bergkette als Höhenprofil, links beleuchtete Hänge, rechte Hänge im Schatten, helle Gipfel."""
+    g = Grid(W, 24)
+    peaks = [(18, 14, 0.9), (60, 20, 1.0), (98, 12, 0.8), (140, 22, 1.1), (186, 14, 0.85), (230, 19, 1.0), (268, 13, 0.9)]
+
+    def height(x):
+        best, side = 0, 0
+        for px_, ph, sl in peaks:
+            for dx in (-W, 0, W):
+                h = ph - abs(x - (px_ + dx)) * sl * 0.9
+                if h > best:
+                    best, side = h, (x - (px_ + dx))
+        return best, side
+
+    for x in range(W):
+        h, side = height(x + 0.5)
+        top = 24 - h
+        for y in range(g.h):
+            if y + 0.5 >= top:
+                depth = y + 0.5 - top
+                if depth < 1.2:
+                    col = "m3" if side < 0 else "m2"
+                elif side < 0 and depth < 4:
+                    col = "m2"
+                elif side > 0 and depth > 2:
+                    col = "m0"
+                else:
+                    col = "m1"
+                g.set(x, y, col)
     return g
 
 
 def hills():
-    g = Grid(W, 22)
-    for cx, rx, ry in ((18, 26, 9), (75, 34, 11), (140, 24, 8), (190, 30, 10)):
-        for dx in (-W, 0, W):
-            g.ellipse(cx + dx, 22, rx, ry, "h2")
-    for y in range(22):
-        for x in range(W):
-            if g.px[y][x] == "h2":
-                above = g.get(x, y - 1)
-                if above is None or above == "h3" and y > 0 and g.get(x, y - 2) is None:
-                    g.px[y][x] = "h3"
-                elif (x // 6 + y // 3) % 2 and y > 16:
-                    g.px[y][x] = "h1"
-    for px_ in (48, 168):
-        p = palm(22)
-        g.paste(p, px_ - 10, 0)
-    return g
+    """Rollende Hügel mit horizontalen Streifen (typischer 16-Bit-Look) und heller Oberkante."""
+    hgt = 16
+    g = Grid(W, hgt)
 
+    def surface(x):
+        t = x / W * 2 * math.pi
+        return 7 + 3 * math.sin(t * 2 + 0.6) + 1.6 * math.sin(t * 5 + 1.7) + 1.0 * math.sin(t * 3)
 
-def ground_tile():
-    g = Grid(10, H - GROUND + 1)
-    for x in range(10):
-        g.set(x, 1, "g1")
-        g.set(x, 2, "g1")
-        g.set(x, 3, "g2")
-    for x in (2, 3, 7):
-        g.set(x, 0, "g1")
-    for y in range(4, g.h):
-        for x in range(10):
-            light = ((x // 5) + ((y - 4) // 5)) % 2 == 0
-            g.set(x, y, "e1" if light else "e2")
-            if light and x % 5 == 0 and (y - 4) % 5 == 0:
-                g.set(x, y, "e3")
+    for x in range(W):
+        top = surface(x + 0.5)
+        for y in range(hgt):
+            d = y + 0.5 - top
+            if d < 0:
+                continue
+            if d < 1:
+                col = "h0"
+            elif d < 2:
+                col = "h5"
+            elif d < 3:
+                col = "h4"
+            else:
+                band = int((y - 0) // 3)
+                col = ("h3", "h2")[band % 2] if d < 6 else ("h2", "h1")[band % 2]
+            g.set(x, y, col)
     return g
 
 
 def build():
-    css = """
-    .clouds{animation:scroll 90s linear infinite}
-    .mount{animation:scroll 40s linear infinite}
-    .hills{animation:scroll 16s linear infinite}
-    .ground{animation:groundscroll .35s linear infinite}
-    .rmove{animation:ringmove 7.2s linear infinite}
-    .spin{animation:spin 1s infinite;transform-box:fill-box;transform-origin:center}
-    .comet{animation:comet 6s linear infinite}
-    .cf1{animation:flick .16s step-end infinite}
-    .cf0{animation:flick .16s step-end infinite reverse}
-    .blink{animation:blink 1.2s step-end infinite}
-    @keyframes scroll{from{transform:translateX(0)}to{transform:translateX(-840px)}}
-    @keyframes groundscroll{from{transform:translateX(0)}to{transform:translateX(-40px)}}
-    @keyframes ringmove{from{transform:translateX(0)}to{transform:translateX(-960px)}}
-    @keyframes spin{0%{transform:scaleX(1)}25%{transform:scaleX(.55)}50%{transform:scaleX(.15)}75%{transform:scaleX(.55)}100%{transform:scaleX(1)}}
-    .spin{animation-timing-function:steps(1,end)}
-    @keyframes comet{0%{transform:translateX(-140px)}24%{transform:translateX(980px)}100%{transform:translateX(980px)}}
-    @keyframes flick{0%{opacity:1}50%{opacity:0}}
-    @keyframes blink{0%{opacity:1}55%{opacity:0}}
-    """
     DEFS.clear()
-    parts = ['<g clip-path="url(#r)">']
+    css = []
+    body = []
+    S = f'transform="scale({P})"'
+
     # Himmel in Bändern
-    bands = [("s1", 0, 10), ("s2", 10, 20), ("s3", 20, 30), ("s4", 30, 38), ("s5", 38, GROUND)]
-    for col, y0, y1 in bands:
-        parts.append(f'<rect x="0" y="{y0 * P}" width="840" height="{(y1 - y0) * P}" fill="{COLORS[col]}"/>')
+    edges = [0, 7, 13, 18, 23, 28, 33, 38, SKY_END]
+    for i in range(8):
+        body.append(f'<rect x="0" y="{edges[i] * P}" width="840" height="{(edges[i + 1] - edges[i]) * P}" fill="{COLORS["s" + str(i)]}"/>')
 
-    sc = f'transform="scale({P})"'
-    # Wolken
-    DEFS.append(f'<g id="cloud">{svg_rects(cloud(), 1, COLORS)}</g>')
-    cloud_pos = [(x + dx, y) for dx in (0, W) for x, y in ((14, 4), (78, 12), (130, 3), (176, 9))]
-    cloud_tile = "".join(f'<use xlink:href="#cloud" x="{x}" y="{y}"/>' for x, y in cloud_pos)
-    parts.append(f'<g class="clouds"><g {sc}>{cloud_tile}</g></g>')
+    # Wolken (zwei Größen), sehr langsam
+    define("cl0", cloud(40, 16, 0))
+    define("cl1", cloud(28, 11, 1))
+    cpos = [("cl0", 8, 6), ("cl1", 70, 16), ("cl0", 128, 3), ("cl1", 190, 12), ("cl0", 232, 8)]
+    tiles = "".join(use(n, x + dx, y) for dx in (0, W) for n, x, y in cpos)
+    body.append(f'<g class="clouds"><g {S}>{tiles}</g></g>')
+    css.append(".clouds{animation:scroll 140s linear infinite}")
+
     # Berge
-    parts.append(f'<g class="mount"><g {sc}>{tile_svg(mountains(), (0, W), 22, 'mount')}</g></g>')
-    # Hügel mit Palmen
-    parts.append(f'<g class="hills"><g {sc}>{tile_svg(hills(), (0, W), GROUND - 22, 'hills')}</g></g>')
-    # Boden
-    gt = ground_tile()
-    parts.append(f'<g class="ground"><g {sc}>{tile_svg(gt, range(0, W + 20, 10), GROUND - 1, 'ground')}</g></g>')
+    define("mount", mountains())
+    body.append(f'<g class="mount"><g {S}>{use("mount", 0, SKY_END - 24)}{use("mount", W, SKY_END - 24)}</g></g>')
+    css.append(".mount{animation:scroll 70s linear infinite}")
 
-    # Ringe, die mit dem Boden vorbeiziehen
-    DEFS.append(f'<g id="ring">{svg_rects(ring(10), 1, COLORS)}</g>')
-    for x, y in ((0, 35), (14, 32), (28, 31), (42, 32), (56, 35)):
-        parts.append(
-            f'<g transform="translate({880 + x * P},{y * P})"><g class="rmove">'
-            f'<g class="spin"><g {sc}><use xlink:href="#ring"/></g></g></g></g>'
+    # Wasser mit Glitzern
+    body.append(f'<rect x="0" y="{SKY_END * P}" width="840" height="{2 * P}" fill="{COLORS["w2"]}"/>')
+    body.append(f'<rect x="0" y="{(SKY_END + 2) * P}" width="840" height="{6 * P}" fill="{COLORS["w1"]}"/>')
+    body.append(f'<rect x="0" y="{(SKY_END + 6) * P}" width="840" height="{4 * P}" fill="{COLORS["w0"]}"/>')
+    for k in range(2):
+        dashes = "".join(
+            f'<rect x="{(x * 23 + k * 11 + (row * 7)) % W * P}" y="{(SKY_END + 1 + row * 2) * P}" width="{(3 - row % 2) * P}" height="{P}" fill="{COLORS["w3"]}"/>'
+            for row in range(4) for x in range(12)
         )
+        body.append(f'<g class="sh{k}">{dashes}</g>')
+    css.append(".sh0{animation:blink .8s step-end infinite}.sh1{animation:blink .8s step-end infinite reverse}")
 
-    # Komet, der alle paar Sekunden durchschießt
-    c0, c1 = svg_rects(comet(0), 1, COLORS), svg_rects(comet(1), 1, COLORS)
-    parts.append(
-        f'<g transform="translate(0,{24 * P})"><g class="comet"><g transform="scale(6)">'
-        f'<g class="cf0">{c0}</g><g class="cf1">{c1}</g></g></g></g>'
+    # Hügel mit Palmen
+    define("hills", hills())
+    define("palm0", palm(30, 1))
+    define("palm1", palm(27, -1))
+    hill_y = GROUND - 16
+    palms = "".join(use(n, x + dx, y) for dx in (0, W) for n, x, y in (("palm0", 34, GROUND - 31), ("palm1", 150, GROUND - 28), ("palm0", 222, GROUND - 30)))
+    body.append(f'<g class="hills"><g {S}>{use("hills", 0, hill_y)}{use("hills", W, hill_y)}{palms}</g></g>')
+    css.append(".hills{animation:scroll 28s linear infinite}")
+
+    # Boden
+    gt = ground_tile(16, 5, H - GROUND)
+    define("ground", gt)
+    gtiles = "".join(use("ground", x, GROUND) for x in range(0, W + 32, 16))
+    t_tile = 16 * P / GROUND_SPEED
+    body.append(f'<g class="ground"><g {S}>{gtiles}</g></g>')
+    css.append(f".ground{{animation:gscroll {t_tile:.3f}s linear infinite}}@keyframes gscroll{{to{{transform:translateX(-{16 * P}px)}}}}")
+
+    # Fatihs Ring (16 Frames, 50 ms), doppelt groß, in einer Reihe, zieht mit dem Boden vorbei
+    frames = fatih_ring_frames()
+    for i, f in enumerate(frames):
+        define(f"r{i}", f)
+    n, dur = len(frames), FRAME_MS * len(frames) / 1000
+    css.append(f".rf{{opacity:0;animation:rf {dur}s step-end infinite}}@keyframes rf{{0%{{opacity:1}}{100 / n:.3f}%{{opacity:0}}}}")
+    ring_one = "".join(f'<g class="rf" style="animation-delay:{-(n - i) * dur / n:.3f}s">{use("r" + str(i), 0, 0)}</g>' for i in range(n))
+    DEFS.append(f'<g id="ring">{ring_one}</g>')
+    pattern_w = 140  # Spielpixel, Muster wiederholt sich
+    arcs = [(30 + j * 14, GROUND - 15) for j in range(5)]  # gerade Reihe
+    rings = "".join(
+        f'<g transform="translate({(x + dx) * P},{y * P}) scale(2)"><use xlink:href="#ring"/></g>'
+        for dx in range(0, W + pattern_w + 1, pattern_w) for x, y in arcs
+    )
+    t_rings = pattern_w * P / GROUND_SPEED
+    body.append(f'<g class="rings">{rings}</g>')
+    css.append(f".rings{{animation:rscroll {t_rings:.3f}s linear infinite}}@keyframes rscroll{{to{{transform:translateX(-{pattern_w * P}px)}}}}")
+
+    # Titelkarte: Name mit Verlauf, Untertitel, PRESS START
+    name = "FATIH COŞKUN"
+    nw = text_width(name, 6)
+    nx = (840 - nw) // 2 // 3 * 3
+    title = fancy_text(name, nx, 18, 6, ["#ffffff", "#fff3a0", "#ffd84a", "#ffb21e"], COLORS["navy"], COLORS["shadow"], 3)
+    start = "▶ PRESS START"
+    px_ = (840 - text_width(start, 3)) // 2 // 3 * 3
+    press = outlined_text(start, px_, 87, 3, "#ffffff", COLORS["navy"])
+    body.append(f'<g class="title">{title}</g><g class="press"><g class="blink">{press}</g></g>')
+
+    # Intro: drei Balken fegen durchs Bild, dann fällt der Name herein
+    stripes = []
+    for i, col in enumerate(("#2464d6", "#ffc81e", "#e8262c")):
+        y0 = i * 80
+        stripes.append(f'<polygon points="0,{y0} 900,{y0} 860,{y0 + 80} -40,{y0 + 80}" fill="{col}"/>')
+    body.append(f'<g class="intro">{"".join(stripes)}</g>')
+    css.append(
+        ".intro{animation:intro 1.1s cubic-bezier(.6,0,.4,1) both}"
+        "@keyframes intro{0%{transform:translateX(0)}35%{transform:translateX(0)}100%{transform:translateX(1000px)}}"
+        ".title{animation:drop .5s steps(5,end) .55s both}"
+        "@keyframes drop{from{transform:translateY(-120px)}to{transform:translateY(0)}}"
+        ".press{animation:appear .01s 1.2s both}@keyframes appear{from{opacity:0}to{opacity:1}}"
+        ".blink{animation:blink 1.2s step-end 1.2s infinite}"
+        "@keyframes blink{0%{opacity:1}55%{opacity:0}}"
+        "@keyframes scroll{to{transform:translateX(-840px)}}"
     )
 
-    # Titelkarte rechts
-    right = 812
-    name = "FATIH COŞKUN"
-    parts.append(outlined_text(name, right - text_width(name, 4), 46, 4, "#ffffff", COLORS["navy"]))
-    sub = "IOS DEVELOPER · STUTTGART"
-    parts.append(outlined_text(sub, right - text_width(sub, 2), 96, 2, COLORS["Y"], COLORS["navy"]))
-    start = "▶ PRESS START"
-    parts.append(f'<g class="blink">{outlined_text(start, right - text_width(start, 2), 126, 2, "#ffffff", COLORS["navy"])}</g>')
-
-    parts.append("</g></svg>")
-    head = [
-        '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 840 240" width="840" height="240" shape-rendering="crispEdges" role="img">',
-        "<title>Fatih Coşkun · iOS Developer · Stuttgart</title>",
-        f"<style>{css}</style>",
-        '<defs><clipPath id="r"><rect width="840" height="240" rx="18"/></clipPath>' + "".join(DEFS) + "</defs>",
-    ]
-    return "".join(head + parts)
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 840 240" '
+        'width="840" height="240" shape-rendering="crispEdges" role="img">'
+        "<title>Fatih Coşkun</title>"
+        f"<style>{''.join(css)}</style>"
+        f'<defs><clipPath id="r"><rect width="840" height="240" rx="15"/></clipPath>{"".join(DEFS)}</defs>'
+        f'<g clip-path="url(#r)">{"".join(body)}</g></svg>'
+    )
 
 
 if __name__ == "__main__":
