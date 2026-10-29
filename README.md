@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="assets/header.svg" width="100%" alt="Pixel-art title card: Fatih Coşkun, iOS Developer, Stuttgart">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/header-dark.svg">
+    <img src="assets/header.svg" width="100%" alt="Pixel-art title card: Fatih Coşkun">
+  </picture>
 </p>
 
 <p align="center">
